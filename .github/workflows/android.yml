@@ -1,70 +1,59 @@
-name: Android CI & Release
+name: Android Release
 
 on:
   push:
-    branches: ["master"]
-    tags: ["v*"]  # Trigger on tags like v1.0.0
-  pull_request:
-    branches: ["master"]
+    tags: ["v*"]  # Trigger releases on version tags
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-      - name: Set up JDK 11
+      
+      - name: Set up JDK
         uses: actions/setup-java@v4
         with:
           java-version: "11"
           distribution: "temurin"
           cache: gradle
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
       - name: Build Release APK
-        run: ./gradlew assembleRelease
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease
 
       - name: Upload APK Artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: release-apk
-          path: app/build/outputs/apk/release/*.apk  # Path to your APK file(s)
+          name: android-release
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/bundle/release/*.aab
 
-  create-release:
+  release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-
     steps:
-      # Download the artifact from previous job
-      - name: Download APK Artifact
-        uses: actions/download-artifact@v3
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
         with:
-          name: release-apk  # Must match upload-artifact name
-          path: ./artifacts/  # Custom download path
+          name: android-release
+          path: ./release-files/
 
-      # Create release and upload assets
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
+      - name: Create GitHub Release
+        uses: actions/create-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ github.ref_name }}
-          release_name: "Release ${{ github.ref_name }}"
-          body: "Production APK"
+          release_name: "${{ github.ref_name }}"
           draft: false
-          prerelease: false
 
-      # Upload the specific APK file
-      - name: Upload Release Asset
+      - name: Upload Release Assets
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./artifacts/app-release-unsigned.apk  # Path to downloaded APK
-          asset_name: app-${{ github.ref_name }}.apk
-          asset_content_type: application/vnd.android.package-archive
+          upload_url: ${{ env.UPLOAD_URL }}
+          asset_path: ./release-files/
+          asset_name: ${{ github.ref_name }}-android-build
